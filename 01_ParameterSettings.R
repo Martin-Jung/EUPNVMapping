@@ -1,0 +1,95 @@
+# Define parameters for the runs
+# it is expected that species gpkg are in the input folder and
+
+# -------------------------------------------------- #
+# -------------------------------------------------- #
+
+# Runname
+runname <- "ClimateRun"
+
+# Scale/grain of analysis in m
+# It is expected that covariates are available in this grain size
+grain <- c("1000", "5000", "10000")[1]
+
+# Cross-validation strategy
+strategy_cv <- c("blocks")
+strategy_cvnr <- c("blocks" = 3)
+
+# Projections?
+doproj <- TRUE
+
+# Assess cross-validated performance with the model
+docv <- TRUE
+
+# Save models?
+modelsave <- TRUE
+
+# Cores and parallel options
+cores <- 7
+
+# Be chatty
+verbose <- TRUE
+
+# Define home folder. Gets overwritten if not used
+path_home <- here::here()
+
+td <- "/media/martin/AAB4A0AFB4A08005/tmp/"
+if(dir.exists(td))
+terra::terraOptions(tempdir = td) # Overwrite temporary directory in raster
+
+# Path output
+path_output = "/media/martin/AAB4A0AFB4A08005/"
+assertthat::assert_that(dir.exists(path_output))
+
+# Path background
+path_background <- "data/"
+assertthat::assert_that(dir.exists(path_background))
+
+# Path processed
+path_rawdata = "/mnt/pdrive/bec_data/100_rawdata/"
+path_processed = "/mnt/pdrive/bec_data/200_processeddata/"
+
+# Finally create an analysis folder and subfolder in the output path
+outdirname <- paste0("PNVHabitats__", runname)
+dir.create(file.path(path_output, outdirname), showWarnings = FALSE)
+path_output <- file.path(path_output, outdirname)
+  
+# Default Projection to be used for all inputs and outputs
+proj <- "+proj=laea +lat_0=52 +lon_0=10 +x_0=4321000 +y_0=3210000 +ellps=GRS80 +units=m +no_defs"
+
+# Clip to NUTS (default, no)
+clip_nuts <- FALSE
+
+# Create temporary folder
+dir.create(paste0(path_home,"/", "resSaves"), showWarnings = FALSE)
+
+# --------- #
+# Path to habitats
+path_habitat <- paste0(path_processed, "/dataclima/habitat_occurrence/")
+dir.create(path_habitat, showWarnings = FALSE)
+
+# Predictors present
+path_presentcovs <- paste0(path_processed, "dataclima/predictors/", grain)
+dir.create(path_presentcovs, showWarnings = FALSE)
+
+# Other predictors related to pnv
+path_pnvcovs <- paste0(path_processed, "dataclima/pnv_baselines/", grain)
+dir.create(path_pnvcovs, showWarnings = FALSE)
+
+# Predictors future
+path_future <- ""
+
+# -------------------------------------------------- #
+# -------------------------------------------------- #
+# Make an security check that all input files and folders and parameters are correctly set
+require(assertthat)
+assert_that(
+  is.character(runname),
+  is.character(grain) && is.numeric(as.numeric(grain)),
+  is.dir(path_output),
+  is.dir(td),
+  is.dir(path_processed),
+  is.numeric(cores),
+  is.dir(path_presentcovs), length(list.files(path_presentcovs)) > 0,
+  is.dir(path_pnvcovs)
+)
