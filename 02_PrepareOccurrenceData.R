@@ -493,7 +493,7 @@ for(m in lyrs$name){
 }
 
 # ------------------------------- #
-#### Assign European habitat indicator species here -----
+#### Assign European habitat indicator species here ####
 library(readxl)
 library(ggplot2)
 
@@ -536,6 +536,7 @@ splist$Habitat.group <- factor(splist$Habitat.group, levels = c("M","N","Q","R",
 # ---- #
 # Now search for occurrence records respectively
 library(rgbif)
+library(fst)
 library(data.table)
 # Create a bounding box
 bb <- project(background, terra::crs("WGS84"))
@@ -578,24 +579,106 @@ gbif_download <- rgbif::occ_download(
   format = "SIMPLE_CSV")
 
 # Reference
-# GBIF Occurrence Download https://doi.org/10.15468/dl.tuu5dp Accessed from R via rgbif (https://github.com/ropensci/rgbif) on 2024-01-30
+# GBIF Occurrence Download https://doi.org/10.15468/dl.6z2f6w  Accessed from R via rgbif (https://github.com/ropensci/rgbif) on 2024-01-30
 # Check download status
-occ_download_wait('0000453-240130105604617')
+occ_download_wait('0178396-240321170329656')
 
-# TODO:
-# Take the first 5 species per group.
-# Assess per PU how many occur. If 3 or more, take as evidence of appropriate site (community)
+# Split externally into smaller batches
+# cat 0178396-240321170329656.csv | parallel --header : --pipe -N999999 'cat >split_file_{#}.csv'
 
-# Read in the result
-sps <- fread("data/0000336-240130105604617.csv",sep = "\t") |> 
+assertthat::assert_that(exists("splist"))
+ll <- list.files("data/", pattern = "split_file", full.names = TRUE)
+ll <- ll[has_extension(ll, "csv")]
+library(fst)
+
+# Now process overall to number of observations per habitat type
+for(f in ll){
+  print(basename(f))
+  a <- data.table::fread(f)
+  assertthat::assert_that(utils::hasName(a, "scientificName")) # Check that names have correctly parsed
   # Anything less or equal than 1km
-  dplyr::filter(coordinateUncertaintyInMeters <= 1000) |> 
-  # After 2000
-  dplyr::filter(year >= 2000) |> 
-  dplyr::select(kingdom:species, scientificName,verbatimScientificName,countryCode,
-                decimalLatitude,decimalLongitude, coordinateUncertaintyInMeters,
-                eventDate, day:year, taxonKey, speciesKey) |> dplyr::distinct()
+  sps <- a |> dplyr::filter(coordinateUncertaintyInMeters <= 1000) |> 
+    # After 2000
+    dplyr::filter(year >= 2000) |> 
+    dplyr::select(kingdom:species, scientificName,verbatimScientificName,countryCode,
+                  decimalLatitude,decimalLongitude, coordinateUncertaintyInMeters,
+                  eventDate, day:year, taxonKey, speciesKey) |> dplyr::distinct()
+  rm(a)
+  
+  # Join with habitat codes
+  sps <- dplyr::inner_join(splist |> dplyr::select(Habitat.code, Speciesname) |> distinct(), sps, by = c("Speciesname"="species")) 
+  if(nrow(sps)==0) next()
+  # Now save per Habitat. code
+  pb <- progress::progress_bar$new(total = length(sps$Habitat.code))
+  for(code in unique(sps$Habitat.code)){
+    pb$tick()
+    dir.create("data/Habitatsplits",showWarnings = FALSE)
+    sub <- subset(sps, Habitat.code == code)
+    ofname <- paste0("data/Habitatsplits/", code, ".fst")
+    if(file.exists(ofname)){
+      d <- fst::read_fst(ofname)
+      fst::write_fst( bind_rows(d, sub), ofname ) # overwrite
+    } else {
+      fst::write_fst(sub, ofname) # Create output
+    }
+  }
+}
 
-nrow(sps)
-n_distinct(sps$scientificName)
-saveRDS(sps, "resSaves/")
+# Now per habitatcode rasterize at 1km
+ll <- list.files("data/Habitatsplits", full.names = TRUE)
+ll <- ll[has_extension(ll, "fst")]
+pb <- progress::progress_bar$new(total = length(ll))
+for(f in ll){
+  pb$tick()
+  sub <- read_fst(f) |> sf::st_as_sf(coords = c("decimalLongitude", "decimalLatitude"), crs = sf::st_crs(4326)) |> 
+    sf::st_transform(crs = sf::st_crs(background)) |> 
+    dplyr::select(Speciesname) |> distinct()
+  # Count the number of species per grid cell and remove duplicates
+  sub$cellid <- terra::cellFromXY(background, sf::st_coordinates(sub))
+  sub <- sub |> dplyr::filter(!duplicated(cellid))
+  if(nrow(sub)==0) next()
+  ras <- terra::rasterize(sub, background, field = "Speciesname", fun = "count")
+  ras <- terra::mask(ras, background)
+  
+  # Save the result as new tif under habitats split
+  writeRaster(ras, paste0("data/Habitatsplits/",basename(tools::file_path_sans_ext(f)), ".tif"), overwrite = TRUE)
+  rm(ras)
+}
+
+# Now finally decide which grid cells to use for reference conditions of aggregated habitats.
+# Here we aggregate per tif in a given group and consider the cell if at least 5 descriptive species have been 
+# found in the respective grid cell. This is assumed to be indicative of community representation.
+# Assess per PU how many occur. If 3 or more, take as evidence of appropriate site (community)
+ll <- list.files("data/Habitatsplits", full.names = TRUE)
+ll <- ll[has_extension(ll, "tif")]
+# Make processing groups
+gr <- splist |> dplyr::select(Habitat.group,Habitat.code) |> distinct()
+gr$ofname <- paste0("/media/martin/AAB4A0AFB4A08005/habitat_occurrence/", make.names(gr$Habitat.group), ".gpkg")
+
+# Join with file names
+gr <- left_join( data.frame(ifname = ll, Habitat.code = tools::file_path_sans_ext(basename(ll))),
+           gr)
+
+assertthat::assert_that(
+  nrow(gr)>0,
+  all(file.exists(unique(gr$ofname)))
+)
+
+for(e in unique(gr$Habitat.group)){
+  print(e)
+  sub <- subset(gr, Habitat.group == e)
+  
+  # Load all and 
+  o <- rast(sub$ifname) |> sum(na.rm = TRUE)
+  
+  # Cutoff of 5
+  o[o<5] <- NA
+  
+  # Convert to point
+  o <- as.data.frame(o, xy = TRUE)
+  o <- o |> sf::st_as_sf(coords = c("x", "y"), crs = sf::st_crs(background)) |> 
+    dplyr::mutate(Habitat.group = e)
+  
+  # Get output file
+  sf::write_sf(o, unique(sub$ofname), layer = "GBIF_CharacteristicVeg")
+}
