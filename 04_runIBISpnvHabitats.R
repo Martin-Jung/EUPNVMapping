@@ -3,7 +3,7 @@ source("00_Functions.R")
 # Source in parameter settings
 source("01_ParameterSettings.R")
 
-# path_habitat <- "/mnt/pdrive/bec_data/200_processeddata/dataclima/habitat_occurrence/"
+path_habitat <- "/media/martin/AAB4A0AFB4A08005/habitat_occurrence"
 # Path variables to input data. This one is expected to point to a 
 
 # Set run cores for parallization
@@ -12,6 +12,9 @@ options('ibis.runparallel' = ifelse(cores>1, FALSE, FALSE) ) # Set to FALSE for 
 
 # -------------------- #
 #### Prepare files for modelling ####
+
+# Get reference raster for the given grain
+background <- terra::rast( paste0(path_background, "background_ref.tif") )
 
 # Get all habitat databases
 habitatdbs <- list.files(path = path_habitat, full.names = TRUE, recursive = TRUE)
@@ -32,8 +35,6 @@ ll <- list.files(paste0(path_pnvcovs),"tif", full.names = TRUE)
 ll <- ll[has_extension(ll, "tif")]
 pnvcovs <- terra::rast(ll)
 
-# Get reference raster for the given grain
-background <- terra::rast( paste0(path_background, "referenceraster_", grain,".tif") )
 # Clip to nuts if set
 if(clip_nuts){
   # Clip with NUTS (excluding Turkey in the process)

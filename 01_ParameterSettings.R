@@ -57,6 +57,10 @@ path_output <- file.path(path_output, outdirname)
 # Default Projection to be used for all inputs and outputs
 proj <- "+proj=laea +lat_0=52 +lon_0=10 +x_0=4321000 +y_0=3210000 +ellps=GRS80 +units=m +no_defs"
 
+# Path to NUTS shapefile
+path_nuts <- "/mnt/hdrive/NaturaConnect/GridsAndBoundaries/Outputs/Vector/PG_gadm_octsaccession_name0_mollweide.gpkg"
+# path_nuts <- paste0(path_rawdata, "/EU_NUTS2021/NUTS_RG_var_2021_4326/NUTS_RG_01M_2021_4326.shp")
+
 # Clip to NUTS (default, no)
 clip_nuts <- FALSE
 
