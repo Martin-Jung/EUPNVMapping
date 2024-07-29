@@ -65,7 +65,7 @@ ll <- list.files(path_chelsa,full.names = TRUE,recursive = TRUE)
 ll <- ll[has_extension(ll, "tif")]
 # Get only for bio|pr|tas|tasmax|tasmin as those are the only ones projected
 ll <- ll[basename(dirname(ll)) %in% c("bio")]
-
+# ll <- ll[grep("kg",ll)]
 # Contemporary first
 ll_contemp <- ll
 # Loop through each file, crop, mask and then project
@@ -82,12 +82,14 @@ for(f in ll_contemp){
   ras <- terra::rast(f)
   # Crop
   ras <- terra::crop(ras, background_wgs84)
-  writeRaster(ras, ofname)
+  writeRaster(ras, ofname,overwrite=TRUE)
   ras <- terra::rast(ofname) # Load again
   
   if(!compareGeom(ras, background_wgs84, stopOnError=F)){
     if(length(grep("kg0|kg1|kg2|kg3|kg4|kg5",basename(f)))>0){
-      ras <- terra::resample(ras, background_wgs84, method = "near")
+      ras <- ras |> terra::as.factor()
+      ras <- terra::resample(ras, background_wgs84, method = "mode")
+      ras <- round(ras) |> terra::as.int()
     } else {
       ras <- terra::resample(ras, background_wgs84, method = "bilinear")
     }
@@ -96,7 +98,16 @@ for(f in ll_contemp){
   ras <- terra::mask(ras, background_wgs84)
   
   # Project
-  ras <- terra::project(ras, terra::crs(background))
+  if(!compareGeom(ras, background, stopOnError=F)){
+    if(length(grep("kg0|kg1|kg2|kg3|kg4|kg5",basename(f)))>0){
+      ras <- terra::project(ras, terra::crs(background),method = "mode")
+      ras <- terra::resample(ras, background, method = "mode")
+      ras <- round(ras) |> terra::as.int() |> as.factor()
+    } else {
+      ras <- terra::project(ras, terra::crs(background))
+      ras <- terra::resample(ras, background, method = "bilinear")
+    }
+  }
   # plot(ras)
   # Save output
   writeRaster(ras, ofname,overwrite = TRUE)
@@ -111,6 +122,7 @@ ll <- list.files(path_chelsa,full.names = TRUE,recursive = TRUE)
 ll <- ll[has_extension(ll, "tif")]
 # Get only for bio|pr|tas|tasmax|tasmin as those are the only ones projected
 ll <- ll[basename(dirname(ll)) %in% c("bio")]
+# ll <- ll[grep("kg",ll)]
 
 # Loop through each file, crop, mask and then project
 for(f in ll){
@@ -125,16 +137,17 @@ for(f in ll){
   dir.create(od,recursive = TRUE,showWarnings = FALSE)
   ofname <- paste0(od, "/", filename)
   if(file.exists(ofname)) next()
-  
+
   ras <- terra::rast(f)
   # Crop
   ras <- terra::crop(ras, background_wgs84)
-  writeRaster(ras, ofname)
+  writeRaster(ras, ofname, overwrite = TRUE)
   ras <- terra::rast(ofname) # Load again
   
   if(!compareGeom(ras, background_wgs84, stopOnError=F)){
     if(length(grep("kg0|kg1|kg2|kg3|kg4|kg5",basename(f)))>0){
-      ras <- terra::resample(ras, background_wgs84, method = "near")
+      ras <- terra::resample(ras, background_wgs84, method = "mode")
+      ras <- round( ras ) |> terra::as.int() # Round to be sure
     } else {
       ras <- terra::resample(ras, background_wgs84, method = "bilinear")
     }
@@ -143,7 +156,16 @@ for(f in ll){
   ras <- terra::mask(ras, background_wgs84)
   
   # Project
-  ras <- terra::project(ras, terra::crs(background))
+  if(!compareGeom(ras, background, stopOnError=F)){
+    if(length(grep("kg0|kg1|kg2|kg3|kg4|kg5",basename(f)))>0){
+      ras <- terra::project(ras, terra::crs(background),method = "mode")
+      ras <- terra::resample(ras, background, method = "mode")
+      ras <- round(ras) |> terra::as.int() |> as.factor()
+    } else {
+      ras <- terra::project(ras, terra::crs(background))
+      ras <- terra::resample(ras, background, method = "bilinear")
+    }
+  }
   # plot(ras)
   # Save output
   writeRaster(ras, ofname,overwrite = TRUE)
@@ -175,12 +197,13 @@ for(f in ll){
   
   # Crop
   ras <- terra::crop(ras, background)
-  writeRaster(ras, ofname)
+  writeRaster(ras, ofname,overwrite = TRUE)
   ras <- terra::rast(ofname) # Load again
   
   if(!compareGeom(ras, background, stopOnError=F)){
-    if(length(grep("kg0|kg1|kg2|kg3|kg4|kg5",basename(f)))>0){
-      ras <- terra::resample(ras, background, method = "near")
+    if(length(grep("Lithology|PNV|EuroVegMap|EU_ecologicalRegions",basename(f)))>0){
+      ras <- terra::resample(ras, background, method = "mode")
+      ras <- round(ras) |> terra::as.int() |> as.factor()
     } else {
       ras <- terra::resample(ras, background, method = "bilinear")
     }
@@ -192,7 +215,16 @@ for(f in ll){
   ras <- terra::mask(ras, background)
   
   # Project
-  ras <- terra::project(ras, terra::crs(background))
+  if(!compareGeom(ras, background, stopOnError=F)){
+    if(length(grep("Lithology|PNV|EuroVegMap|EU_ecologicalRegions",basename(f)))>0){
+      ras <- terra::project(ras, terra::crs(background),method = "mode")
+      ras <- terra::resample(ras, background, method = "mode")
+      ras <- round(ras) |> terra::as.int() |> as.factor()
+    } else {
+      ras <- terra::project(ras, terra::crs(background))
+      ras <- terra::resample(ras, background, method = "bilinear")
+    }
+  }
   # plot(ras)
   # Save output
   writeRaster(ras, ofname,overwrite = TRUE)
