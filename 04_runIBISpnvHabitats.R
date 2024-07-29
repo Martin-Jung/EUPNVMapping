@@ -469,9 +469,6 @@ for(hab in sort(habitatdbs)){ # hab <- habitatdbs[5]
     # --- #
     message("Projection done for ", sname)
   }
-  # Delete and clean up
-  try({rm(mod1, ofname, basemodel)})
-  invisible(gc())
   
   #### Validation ----
   if(doValidation){
@@ -516,6 +513,11 @@ for(hab in sort(habitatdbs)){ # hab <- habitatdbs[5]
     
     message("Cross-validation done for ", sname)
   }
+  
+  # Delete and clean up
+  try({rm(mod1, ofname, basemodel)})
+  invisible(gc())
+  
 }
 
 stop("DONE!")

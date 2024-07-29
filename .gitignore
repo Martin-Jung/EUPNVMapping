@@ -8,3 +8,6 @@ gbifpasswd.txt
 
 # Ignore rest of data (too big)
 data/
+
+# And resSaves folder (download)
+resSaves/
