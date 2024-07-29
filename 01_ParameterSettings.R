@@ -11,8 +11,8 @@ runname <- "ClimateRun"
 # It is expected that covariates are available in this grain size
 grain <- c("1000", "5000", "10000")[1]
 
-user <- c('martin_local', 'martin_hpg901')[1]
-
+user <- c('martin_local', 'martin_hpg901')[2]
+if(dir.exists("/media/martin/")) user <- 'martin_local'
 
 # Cross-validation strategy
 strategy_cv <- c("blocks")

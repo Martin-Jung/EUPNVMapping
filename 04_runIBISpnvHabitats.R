@@ -147,7 +147,7 @@ assertthat::assert_that(
 #### Execute prediction sequential ####
 
 mm = "bart" # Stays the same. We use BART for estimation throughout
-doFuture <- TRUE # Future projections
+doFuture <- F # Future projections
 doValidation <- TRUE # Validation run to assess model performance
 testing <- FALSE # Use aggregated 10km data instead
 doPrediction <- FALSE
@@ -477,7 +477,7 @@ for(hab in sort(habitatdbs)){ # hab <- habitatdbs[5]
   if(doValidation){
     
     # Get training data from object
-    spc <- spatialsample::spatial_block_cv(data = train, repeats = 2, method = "random", v = strategy_cvnr[['blocks']])
+    spc <- spatialsample::spatial_block_cv(data = train, repeats = 2, method = "random", v = 3)
 
     # Now compute for each fold
     for(fold in unique(spc$id2) ){ # fold = "fold1"
