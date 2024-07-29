@@ -5,3 +5,6 @@
 
 # Skip key
 gbifpasswd.txt
+
+# Ignore rest of data (too big)
+data/

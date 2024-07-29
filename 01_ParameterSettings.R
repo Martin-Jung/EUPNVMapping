@@ -11,7 +11,7 @@ runname <- "ClimateRun"
 # It is expected that covariates are available in this grain size
 grain <- c("1000", "5000", "10000")[1]
 
-user <- c('martin_local', 'martin_hpg901')[2]
+user <- c('martin_local', 'martin_hpg901')[1]
 
 
 # Cross-validation strategy
@@ -49,6 +49,10 @@ assertthat::assert_that(dir.exists(path_output))
 # Path background
 path_background <- "data/"
 assertthat::assert_that(dir.exists(path_background))
+
+# Figure path
+path_figures <- "figures/"
+dir.create(path_figures, showWarnings = FALSE)
 
 # Path processed
 if(user == 'martin_local') {
