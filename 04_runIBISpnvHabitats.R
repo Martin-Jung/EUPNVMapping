@@ -147,9 +147,9 @@ assertthat::assert_that(
 #### Execute prediction sequential ####
 
 mm = "bart" # Stays the same. We use BART for estimation throughout
-doFuture <- F # Future projections
-doValidation <- TRUE # Validation run to assess model performance
-testing <- FALSE # Use aggregated 10km data instead
+doFuture <- T # Future projections
+doValidation <- F # Validation run to assess model performance
+testing <- F # Use aggregated 10km data instead
 doPrediction <- FALSE
 ## Parallel code
 # Fire up a cluster for parallel processing
@@ -169,7 +169,7 @@ doPrediction <- FALSE
 #        .packages = c('sf','dataclima', "ibis.iSDM", "assertthat", "raster", "modEvA", "sf"),
 #        .export = c('path_output','fullcovs')
 #        ) %dopar% {
-for(hab in sort(habitatdbs)){ # hab <- habitatdbs[5] 
+for(hab in sort(habitatdbs)){ # hab <- habitatdbs[3] 
   
   # Habitat name
   sname <- tools::file_path_sans_ext(basename(hab))
@@ -363,6 +363,11 @@ for(hab in sort(habitatdbs)){ # hab <- habitatdbs[5]
     # Thresholds
     ofname <- paste0(outdir, "/", "Threshold__",sname, ".tif")
     write_output(mod1$get_data("threshold_percentile")[[c(1,3,4,5)]], ofname, "INT2S")
+  } else {
+    # But check threshold and set if necessary
+    if(is.Waiver(mod1$get_thresholdvalue())){
+      mod1 <- try({threshold(mod1, method = "percentile",value = 0.05)}, silent = TRUE)
+    }
   }
   
   #### Scenario projection ----
@@ -382,7 +387,7 @@ for(hab in sort(habitatdbs)){ # hab <- habitatdbs[5]
         # Now load the stacks per timeframe
         ras <- terra::rast(subss$ifname)
         if(testing){
-          ras <- aggregate(ras, fact = 10)
+          ras <- terra::aggregate(ras, fact = 10)
         }
         if(!terra::compareGeom(ras, basemodel$predictors$get_data(),stopOnError = FALSE)){
           ras <- terra::resample(ras, basemodel$predictors$get_data())
@@ -421,7 +426,9 @@ for(hab in sort(habitatdbs)){ # hab <- habitatdbs[5]
         #   fut <- ibis.iSDM:::st_add_raster(fut, basemodel$predictors$get_data()[[miss]])
         # }
         ## Alternative implementation per timeslot
-        for(p in unique(terra::time(ras))){
+        for(p in unique(terra::time(ras))){ # p = unique(terra::time(ras))[1]
+          message("Modelling time period:", p)
+          
           fut <- ras[[which(terra::time(ras)==p)]]
           # Transform
           fut2 <- predictor_transform(fut[[which(names(fut) %in% colnames(state))]],
@@ -436,6 +443,7 @@ for(hab in sort(habitatdbs)){ # hab <- habitatdbs[5]
           # Security check
           assertthat::assert_that(all(names(fut) %in% basemodel$get_predictor_names() ))
           
+          message("Starting with scenario...")
           # ---- #
           # Now create the projection model
           sc <- scenario(mod1) |> 
@@ -458,11 +466,11 @@ for(hab in sort(habitatdbs)){ # hab <- habitatdbs[5]
           names(p4) <- c("suitability_mean", "threshold_mean")
           
           # Save the outputs
+          message("Saving the outputs...")
           ofname <- paste0(outdir, "/", "Projection__",sname, "__", p ,"__", s, "__", g ,".nc")
           write_output(c(p1,p2,p3,p4), ofname)
           try({ rm(proj1, sc, proj2, proj3, proj4, p1,p2,p3,p4) },silent = TRUE)
           gc()
-          
         } # End of period loop
       }
     }
