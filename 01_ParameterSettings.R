@@ -11,8 +11,7 @@ runname <- "ClimateRun"
 # It is expected that covariates are available in this grain size
 grain <- c("1000", "5000", "10000")[1]
 
-user <- c('martin_local', 'martin_hpg901')[2]
-if(dir.exists("/media/martin/")) user <- 'martin_local'
+user <- c('martin_local', 'martin_hpg901', 'martin_ebro')[1]
 
 # Cross-validation strategy
 strategy_cv <- c("blocks")
@@ -37,6 +36,7 @@ path_home <- here::here()
 
 if(user == 'martin_local') td <- "/media/martin/AAB4A0AFB4A08005/tmp/"
 if(user == 'martin_hpg901') td <- "~/tmp/"
+if(user == 'martin_ebro') td <- "H:/tmp/"
   
 if(dir.exists(td))
 terra::terraOptions(tempdir = td) # Overwrite temporary directory in raster
@@ -44,6 +44,7 @@ terra::terraOptions(tempdir = td) # Overwrite temporary directory in raster
 # Path output
 if(user == 'martin_local') path_output = "/media/martin/AAB4A0AFB4A08005/"
 if(user == 'martin_hpg901') path_output = "~/"
+if(user == 'martin_ebro') path_output = "H:/"
 assertthat::assert_that(dir.exists(path_output))
 
 # Path background
@@ -61,6 +62,9 @@ if(user == 'martin_local') {
 } else if(user == 'martin_hpg901') {
   path_rawdata = "~/100_rawdata/"
   path_processed = "~/200_processeddata/"
+} else if(user == 'martin_ebro') {
+  path_rawdata = "H:/100_rawdata/"
+  path_processed = "H:/200_processeddata/"
 }
 
 # Finally create an analysis folder and subfolder in the output path
@@ -76,6 +80,8 @@ if(user == 'martin_local') {
   path_nuts <- "/mnt/hdrive/NaturaConnect/GridsAndBoundaries/Outputs/Vector/PG_gadm_octsaccession_name0_mollweide.gpkg"
 } else if(user == 'martin_hpg901') {
   path_nuts <- "~/NaturaConnect/GridsAndBoundaries/Outputs/Vector/PG_gadm_octsaccession_name0_mollweide.gpkg"
+} else if(user == 'martin_ebro') {
+  path_nuts <- "H:/NaturaConnect/GridsAndBoundaries/Outputs/Vector/PG_gadm_octsaccession_name0_mollweide.gpkg"
 }
 # path_nuts <- paste0(path_rawdata, "/EU_NUTS2021/NUTS_RG_var_2021_4326/NUTS_RG_01M_2021_4326.shp")
 
@@ -93,8 +99,9 @@ path_habitat <- paste0(path_processed, "/dataclima/habitat_occurrence/")
 # path_presentcovs <- paste0(path_processed, "dataclima/predictors/", grain)
 if(user == 'martin_local') path_presentcovs <- paste0("/media/martin/AAB4A0AFB4A08005/PNV_covs")
 if(user == 'martin_hpg901') path_presentcovs <- paste0(path_processed, "/PNV_covs")
-
+if(user == 'martin_ebro') path_presentcovs <- paste0(path_processed, "/PNV_covs")
 dir.create(path_presentcovs, showWarnings = FALSE)
+assertthat::assert_that(dir.exists(path_presentcovs))
 
 # Other predictors related to pnv
 # path_pnvcovs <- paste0(path_processed, "dataclima/pnv_baselines/", grain)

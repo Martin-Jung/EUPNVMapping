@@ -329,14 +329,14 @@ for(hab in sort(habitatdbs)){ # hab <- habitatdbs[3]
     add_biodiversity_poipa(train, name = sname, field_occurrence = "observed", docheck = F)
   
   ofname <- paste0(outdir, "/", "Model__",sname, ".rds")
-  if(file.exists(ofname)){
-    mod1 <- load_model(ofname)
-  } else {
+  # if(file.exists(ofname)){
+  #   mod1 <- load_model(ofname)
+  # } else {
     mod1 <- try({
       train(x, runname = paste0("pnv","_",sname), filter_predictors = "pear",
             only_linear = FALSE, verbose = verbose)
     })
-  }
+  # }
   if(inherits(mod1, "try-error")) next() # Overall model fitting failed
   
   # Resave model
