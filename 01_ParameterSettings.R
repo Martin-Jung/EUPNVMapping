@@ -11,8 +11,8 @@ runname <- "ClimateRun"
 # It is expected that covariates are available in this grain size
 grain <- c("1000", "5000", "10000")[1]
 
-user <- c('martin_local', 'martin_hpg901', 'martin_ebro')[1]
-
+user <- c('martin_local', 'martin_hpg901', 'martin_ebro')[2]
+message(user)
 # Cross-validation strategy
 strategy_cv <- c("blocks")
 strategy_cvnr <- c("blocks" = 3, "metric" = "F1")
