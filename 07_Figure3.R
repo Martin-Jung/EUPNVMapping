@@ -155,30 +155,61 @@ writeRaster(out2, paste0(path_res, "CurrentPNV_mostlikely.tif"), overwrite=TRUE)
 
 #### 3. Build plot ####
 # Simply visualize both maps side by side
+library(tidyterra)
+library(patchwork)
 
 # Save a copy of the output
 out1 <- terra::rast( paste0(path_res, "CurrentPNV_challenge.tif"))
 out2 <- terra::rast( paste0(path_res, "CurrentPNV_mostlikely.tif"))
+# Reclassify for visualization
+out1 <- ibis.iSDM::predictor_transform(out1,option = "perc")
+
+names(out1) <- "Challenge of transitioning to PNV"
+names(out2) <- "Most likely PNV"
+
+# Colours
+cols <- c("Woodland.and.forest"  = "#117733",
+          "Heathland.and.shrub" = "#B65719",
+          "Grassland" = "#DDCC77",
+          "Sparsely.vegetated.areas" = "#AA4499",
+          "Wetlands"  = "#332288",
+          "Marine.inlets.and.transitional.waters" = "#88CCEE"
+)
 
 assertthat::assert_that(ibis.iSDM::is.Raster(out1),
                         ibis.iSDM::is.Raster(out2))
 
-#TODO: Built a plot
 # Now plot
-gm <- ggplot() +
-  geom_spatraster(data = ras_med) +
+gm1 <- ggplot() +
+  theme_grey(base_size = 20) +
+  geom_spatraster(data = out2,maxcell = 1e6) +
   facet_wrap(~lyr, ncol = 2) +
-  scale_fill_whitebox_c(
-    palette = "atlas",
-    # n.breaks = 12,
-    breaks = seq(0,1,length.out = 11),
-    direction = -1,
-    guide = guide_legend(reverse = TRUE)
-  ) +
-  labs(
-    fill = "",
-    title = "Current potential natural vegetation (PNV)",
-    subtitle = "Median predictions"
-  )
+    theme(strip.text.x.top = element_text(size = 20),
+          strip.background = element_rect(fill = "white")) +
+  scale_fill_manual(values = cols,na.value = NA,
+                    na.translate = FALSE) +
+    guides(fill = guide_legend(title = "")) +
+    theme(legend.position = "bottom",legend.text = element_text(22))
+gm1
 
-ggsave(plot = gm, filename = "figures/Figure3.png", width = 15, height = 10)
+gm2 <- ggplot() +
+  theme_grey(base_size = 20) +
+  geom_spatraster(data = out1) +
+  facet_wrap(~lyr, ncol = 2) +
+    theme(strip.text.x.top = element_text(size = 20),
+          strip.background = element_rect(fill = "white")) +
+  scale_fill_viridis_c(option = "F",na.value = NA,direction = -1,
+                    guide = guide_colorbar(title = "Challenge")
+  ) + 
+    theme(legend.position = "bottom",legend.title.position = "left",
+          legend.title = element_text(vjust = 1),
+          legend.key.width  = unit(0.5, 'in') ) +
+  # Transparent
+  theme( panel.background = element_rect(fill = 'grey90'),
+         plot.background = element_rect(fill = "transparent",colour = NA),
+         legend.background = element_rect(fill = "transparent"))
+gm2
+
+gm <- gm1 + gm2
+
+ggsave(plot = gm, filename = "figures/Figure3.png", width = 20, height = 10)
