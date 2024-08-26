@@ -14,7 +14,7 @@ source("01_ParameterSettings.R")
 
 # Set run cores for parallization
 options('ibis.nthread' = cores)
-options('ibis.runparallel' = ifelse(cores>1, FALSE, FALSE) ) # Set to FALSE for slower, but memory proof runs
+options('ibis.runparallel' = ifelse(cores>1, TRUE, FALSE) ) # Set to FALSE for slower, but memory proof runs
 
 # -------------------- #
 #### Prepare files for modelling ####
@@ -146,11 +146,11 @@ assertthat::assert_that(
 # -------------------- #
 #### Execute prediction sequential ####
 
-mm = "bart" # Stays the same. We use BART for estimation throughout
-doFuture <- T # Future projections
+mm = c("bart","breg")[2] # Stays the same. We use BART for estimation throughout
+doFuture <- F # Future projections
 doValidation <- F # Validation run to assess model performance
 testing <- F # Use aggregated 10km data instead
-doPrediction <- FALSE
+doPrediction <- T
 ## Parallel code
 # Fire up a cluster for parallel processing
 #library(doMC); library(doParallel)
@@ -166,10 +166,10 @@ doPrediction <- FALSE
 #proc <- foreach(species = iter(sort(speciesdbs)),
 #        .errorhandling = 'stop',
 #        .inorder = TRUE,
-#        .packages = c('sf','dataclima', "ibis.iSDM", "assertthat", "raster", "modEvA", "sf"),
+#        .packages = c('sf','dataclima', "ibis.iSDM", "assertthat", "terra", "modEvA", "sf"),
 #        .export = c('path_output','fullcovs')
-#        ) %dopar% {
-for(hab in sort(habitatdbs)){ # hab <- habitatdbs[3] 
+#        ) %do% {
+for(hab in rev(habitatdbs)){ # hab <- habitatdbs[3] 
   
   # Habitat name
   sname <- tools::file_path_sans_ext(basename(hab))
@@ -222,9 +222,9 @@ for(hab in sort(habitatdbs)){ # hab <- habitatdbs[3]
   
   # ---
   # Check if existing, otherwise skip
-  tex <- c( paste0(outdir, "/", "Model__",sname, ".tif"),
-            paste0(outdir, "/", "Prediction__",sname, ".tif"),
-            paste0(outdir, "/", "Threshold__",sname, ".tif")
+  tex <- c( paste0(outdir, "/", "Model__",sname, "__", mm,".tif"),
+            paste0(outdir, "/", "Prediction__",sname, "__", mm,".tif"),
+            paste0(outdir, "/", "Threshold__",sname,"__", mm, ".tif")
   )
   if(all(file.exists(tex))) next()
   # ---
@@ -284,7 +284,8 @@ for(hab in sort(habitatdbs)){ # hab <- habitatdbs[3]
   
   # if(mm == "xgboost") basemodel <- basemodel %>%  engine_xgboost(nrounds = 10000, gamma = 4)
   # if(mm == "gdb") basemodel <- basemodel %>% engine_gdb(boosting_iterations = 2500, learning_rate = 0.001)
-  if(mm == "bart") basemodel <- basemodel %>% engine_bart(iter = 1000,nburn = 250)
+  if(mm == "bart") basemodel <- basemodel %>% engine_bart(iter = ifelse(doFuture,100, 1000), nburn = ifelse(doFuture,25, 1000),chains = ifelse(doFuture, 1, 4))
+  if(mm == "breg") basemodel <- basemodel %>% engine_breg(iter = ifelse(doFuture||doValidation,1000, 5000))
   
   # N2k data present, add simulated points
   # Now done further above
@@ -307,6 +308,8 @@ for(hab in sort(habitatdbs)){ # hab <- habitatdbs[3]
       if(length(vv)<2) pp <- GDBPrior(variable = vv, hyper = "increasing") else pp <- GDBPriors(variable = vv, hyper = "increasing")
     } else if(basemodel$engine$name == "<BART>"){
       if(length(vv)<2) pp <- BARTPrior(variable = vv, hyper = 0.75) else pp <- BARTPriors(variable = vv, hyper = 0.75)
+    } else if(basemodel$engine$name == "<BREG>"){
+      if(length(vv)<2) pp <- BREGPrior(variable = vv, hyper = 2, ip = 0.75) else pp <- BREGPriors(variable = vv, hyper = 2, ip = 0.75)
     }
     basemodel <- basemodel %>% add_priors( priors(pp) )
   }
@@ -316,6 +319,8 @@ for(hab in sort(habitatdbs)){ # hab <- habitatdbs[3]
     vv <- grep(paste0(pnv_legends$layer,collapse = "|"), basemodel$get_predictor_names(),value = TRUE)
     if(basemodel$engine$name == "<BART>"){
       if(length(vv)<2) pp <- BARTPrior(variable = vv, hyper = 0.75) else pp <- BARTPriors(variable = vv, hyper = 0.75)
+    } else if(basemodel$engine$name == "<BREG>"){
+      if(length(vv)<2) pp <- BREGPrior(variable = vv, hyper = 2, ip = 0.75) else pp <- BREGPriors(variable = vv, hyper = 2, ip = 0.75)
     }
     basemodel <- basemodel %>% add_priors( priors(pp) )
   }
@@ -328,12 +333,13 @@ for(hab in sort(habitatdbs)){ # hab <- habitatdbs[3]
   x <- basemodel %>% 
     add_biodiversity_poipa(train, name = sname, field_occurrence = "observed", docheck = F)
   
-  ofname <- paste0(outdir, "/", "Model__",sname, ".rds")
-  # if(file.exists(ofname)){
-  #   mod1 <- load_model(ofname)
+  # ofname <- paste0(outdir, "/", "Model__",sname, ".rds")
+  # if(file.exists(ofname) && !doFuture){
+     # mod1 <- load_model(ofname)
   # } else {
     mod1 <- try({
       train(x, runname = paste0("pnv","_",sname), filter_predictors = "pear",
+            only_inference = ifelse(doFuture && !doValidation, TRUE, FALSE),
             only_linear = FALSE, verbose = verbose)
     })
   # }
@@ -352,16 +358,16 @@ for(hab in sort(habitatdbs)){ # hab <- habitatdbs[3]
     if(inherits(mod1, "try-error")) {
       message("Thresholding went wrong..")
     }
-    ofname <- paste0(outdir, "/", "Model__",sname, ".rds")
+    ofname <- paste0(outdir, "/", "Model__",sname, "__", mm, ".rds")
     write_model(mod1, ofname)
     
     # Create output layers #
     # Prediction
-    ofname <- paste0(outdir, "/", "Prediction__",sname, ".tif")
+    ofname <- paste0(outdir, "/", "Prediction__",sname, "__", mm, ".tif")
     write_output(mod1$get_data(), ofname, "FLT4S")
     
     # Thresholds
-    ofname <- paste0(outdir, "/", "Threshold__",sname, ".tif")
+    ofname <- paste0(outdir, "/", "Threshold__",sname, "__", mm, ".tif")
     write_output(mod1$get_data("threshold_percentile")[[c(1,3,4,5)]], ofname, "INT2S")
   } else {
     # But check threshold and set if necessary
@@ -381,7 +387,7 @@ for(hab in sort(habitatdbs)){ # hab <- habitatdbs[3]
       for(g in unique(subs$gcm)){ # g = unique(sub$gcm)[1]
         subss <- subset(subs, gcm == g)
         message(s, " - ", g)
-        ofname <- paste0(outdir, "/", "Projection__",sname, "__", s, "__", g ,".nc")
+        ofname <- paste0(outdir, "/", "Projection__",sname, "__", mm, "__", s, "__", g ,".nc")
         if(file.exists(ofname)) next()
         
         # Now load the stacks per timeframe
@@ -390,7 +396,7 @@ for(hab in sort(habitatdbs)){ # hab <- habitatdbs[3]
           ras <- terra::aggregate(ras, fact = 10)
         }
         if(!terra::compareGeom(ras, basemodel$predictors$get_data(),stopOnError = FALSE)){
-          ras <- terra::resample(ras, basemodel$predictors$get_data())
+          ras <- terra::resample(ras, basemodel$predictors$get_data(),overwrite=TRUE)
         }
         terra::time(ras) <- subss$time
         names(ras) <- subss$varname
@@ -427,7 +433,9 @@ for(hab in sort(habitatdbs)){ # hab <- habitatdbs[3]
         # }
         ## Alternative implementation per timeslot
         for(p in unique(terra::time(ras))){ # p = unique(terra::time(ras))[1]
-          message("Modelling time period:", p)
+          ofname <- paste0(outdir, "/", "Projection__",sname, "__", mm,"__", p ,"__", s, "__", g ,".tif")
+          if(file.exists(ofname)) next()
+          message("Modelling time period: ", p)
           
           fut <- ras[[which(terra::time(ras)==p)]]
           # Transform
@@ -446,30 +454,41 @@ for(hab in sort(habitatdbs)){ # hab <- habitatdbs[3]
           message("Starting with scenario...")
           # ---- #
           # Now create the projection model
-          sc <- scenario(mod1) |> 
-            threshold() |> 
-            add_predictors(fut,transform = "none",explode_factors = TRUE)
-          proj1 <- try({ project(sc, layer = "q05") })
-          if(inherits(proj1, "try-error")){ warning("Projection failed..."); next() }
-          proj2 <- try({ project(sc, layer = "q50") })
-          proj3 <- try({ project(sc, layer = "q95") })
-          proj4 <- try({ project(sc, layer = "mean") })
-          # ---- #
+          #sc <- scenario(mod1) |> 
+          #  threshold() |> 
+          #  add_predictors(fut,transform = "none",explode_factors = TRUE)
+          #proj1 <- try({ project(sc, layer = "q05") })
+          #if(inherits(proj1, "try-error")){ warning("Projection failed..."); next() }
+          #proj2 <- try({ project(sc, layer = "q50") })
+          #proj3 <- try({ project(sc, layer = "q95") })
+          #proj4 <- try({ project(sc, layer = "mean") })
           # Combine all
-          p1 <- proj1$get_data()
-          names(p1) <- c("suitability_q05", "threshold_q05")
-          p2 <- proj2$get_data()
-          names(p2) <- c("suitability_q50", "threshold_q50")
-          p3 <- proj3$get_data()
-          names(p3) <- c("suitability_q95", "threshold_q95")
-          p4 <- proj4$get_data()
-          names(p4) <- c("suitability_mean", "threshold_mean")
+          # p1 <- proj1$get_data()
+          # names(p1) <- c("suitability_q05", "threshold_q05")
+          # p2 <- proj2$get_data()
+          # names(p2) <- c("suitability_q50", "threshold_q50")
+          # p3 <- proj3$get_data()
+          # names(p3) <- c("suitability_q95", "threshold_q95")
+          # p4 <- proj4$get_data()
+          # names(p4) <- c("suitability_mean", "threshold_mean")
+          p1 <- mod1$project(newdata = as.data.frame(fut, xy = TRUE, na.rm = FALSE), layer = "q05")
+          p2 <- mod1$project(newdata = as.data.frame(fut, xy = TRUE, na.rm = FALSE), layer = "q50")
+          p3 <- mod1$project(newdata = as.data.frame(fut, xy = TRUE, na.rm = FALSE), layer = "q95")
+          p4 <- mod1$project(newdata = as.data.frame(fut, xy = TRUE, na.rm = FALSE), layer = "mean")
+          pp <- c(p1,p2,p3,p4)
+          names(pp) <- paste0("suitability_", c("q05","q50","q95","mean"))
+          pt <- pp
+          pt[pt<mod1$get_thresholdvalue()] <- 0; pt[pt>0] <- 1
+          names(pt) <- paste0("threshold_", c("q05","q50","q95","mean"))
+          pp <- c(pp,pt);rm(pt)
+          if(is.Raster(pp)) terra::time(pp) <- rep(as.Date(p),terra::nlyr(pp))
+          # ---- #
           
           # Save the outputs
           message("Saving the outputs...")
-          ofname <- paste0(outdir, "/", "Projection__",sname, "__", p ,"__", s, "__", g ,".nc")
-          write_output(c(p1,p2,p3,p4), ofname)
-          try({ rm(proj1, sc, proj2, proj3, proj4, p1,p2,p3,p4) },silent = TRUE)
+          ofname <- paste0(outdir, "/", "Projection__",sname, "__", mm,"__", p ,"__", s, "__", g ,".tif")
+          write_output(pp, ofname)
+          try({ rm(sc, p1,p2,p3,p4, pp) },silent = TRUE)
           gc()
         } # End of period loop
       }
@@ -491,16 +510,21 @@ for(hab in sort(habitatdbs)){ # hab <- habitatdbs[3]
       # Get testing data
       for(r in unique(spc$id[spc$id2==fold])){
         sub <- spc |> dplyr::filter(id2 == fold, id == r)
-        
+        ofname <- paste0(outdir, "/", "Validation__",sname, "__", mm, "__", paste0(fold,"-",r), ".rds")
+        if(file.exists(ofname)) next()
+          
         train <- spatialsample::analysis(sub$splits[[1]])
         test <- spatialsample::assessment(sub$splits[[1]])
         
         x <- basemodel %>% 
           add_biodiversity_poipa(train, name = sname, field_occurrence = "observed", docheck = F)
         
+        if(mm == "bart") x <- x %>% engine_bart(iter = 100,nburn = 25)
+        if(mm == "breg") x <- x %>% engine_breg(iter = 1000)
+        
         # Train with slighly fewer iterations
         mod1 <- try({
-          train(x |> engine_bart(iter = 100,nburn = 25), runname = paste0("cv","_",sname), filter_predictors = "pear",
+          train(x, runname = paste0("cv","_",sname), filter_predictors = "pear",
                 only_linear = FALSE, verbose = verbose)
         })
         
@@ -511,7 +535,6 @@ for(hab in sort(habitatdbs)){ # hab <- habitatdbs[3]
         # Also append the threshold data
         val <- dplyr::bind_rows(val, data.frame(metric = "threshold", value = mod1$get_thresholdvalue() ))
         
-        ofname <- paste0(outdir, "/", "Validation__",sname, "__", paste0(fold,"-",r), ".rds")
         saveRDS(val, ofname)
         # Clean up
         try({ rm(sub, mod1, x) })
@@ -525,7 +548,6 @@ for(hab in sort(habitatdbs)){ # hab <- habitatdbs[3]
   # Delete and clean up
   try({rm(mod1, ofname, basemodel)})
   invisible(gc())
-  
 }
 
 stop("DONE!")
