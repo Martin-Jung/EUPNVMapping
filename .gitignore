@@ -11,3 +11,13 @@ data/
 
 # And resSaves folder (download)
 resSaves/
+
+# Ignore figures
+figures/
+
+# Corine and Dou et al
+corine/
+DouEtAl/
+
+# And the PNVHabitats runs
+PNVHabitats__ClimateRun

@@ -14,7 +14,7 @@ options('ibis.runparallel' = ifelse(cores>1, FALSE, FALSE) ) # Set to FALSE for 
 
 # -------------------- #
 # Get reference raster for the given grain
-background <- terra::rast( paste0(path_background, "background_ref.tif") )
+background <- terra::rast( "data/background_ref.tif")
 
 ## Legend
 # 1 - Woodland and forest
@@ -27,7 +27,9 @@ background <- terra::rast( paste0(path_background, "background_ref.tif") )
 # 8 - Rivers and lakes
 # 9 - Marine inlets and transitional waters
 # 11 - Pasture
-ll <- list.files("resSaves/",full.names = TRUE)
+ll <- list.files("corine/",full.names = TRUE)
+ll <- ll[has_extension(ll, "tif")]
+ll <- ll[grep("Corine_", ll)]
 ras <- rast(ll)
 names(ras) <- stringr::str_remove(tools::file_path_sans_ext( basename(ll) ), "Corine_2018_")
 names(ras) <- c("Woodland.and.forest", "Pasture", "Heathland.and.shrub", "Grassland", "Sparsely.vegetated.areas",
@@ -49,12 +51,34 @@ ras <- (ras / 10000) * terra::cellSize(ras, unit = "km")
 plot(ras$Pasture)
 
 # --- #
-# Get the predictions, specifically the thresholds
-ll <- list.files(path_output, full.names = TRUE, recursive = TRUE)
+# Get the ensemble predictions
+path_ensemble <- "./ensemble/Masked/"
+ll <- list.files(path_ensemble, full.names = TRUE, recursive = TRUE)
 ll <- ll[has_extension(ll,"tif")]
-ll <- ll[grep("Threshold", ll)]
+#ll <- ll[grep("Threshold", ll)]
 ll <- ll[grep("Masked", ll)]
 assertthat::assert_that(length(ll)>0, msg = "No results found...")
+
+#### Summarize directly from the predictions ####
+# Since those are probability layer, we multiply directly with area
+
+results <- data.frame()
+for(lyr in ll){
+  preds <- terra::rast(lyr)
+  
+  new_med <- ras * preds[['q50']]
+  new_low <- ras * preds[['q05']]
+  new_high <- ras * preds[['q95']]
+  df <- cbind(
+    terra::global(new_med, "sum",na.rm = TRUE),
+    terra::global(new_low, "sum",na.rm = TRUE),
+    terra::global(new_high, "sum",na.rm = TRUE)
+  ) |> as.data.frame() 
+  names(df) <- c("q50", "q05", "q95")
+  df <- df |> tibble::rownames_to_column("variable")
+}
+# TODO: Figure out what to actually summarize. Imo it makes only sense over
+# managed areas, e.g. cropland, pasture, urban, plantation.
 
 #### Process the thresholded layers ####
 # Load each layer, then assess the amount of area that requires transitioning 
@@ -66,7 +90,7 @@ for(lyr in ll){
   message(basename(lyr))
   
   tr <- rast(lyr)
-  tr[tr<1] <- NA
+  # tr[tr<1] <- NA
   
   # Calculate zonal statistics for each
   for(i in 1:terra::nlyr(tr)){
