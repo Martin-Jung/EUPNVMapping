@@ -32,14 +32,17 @@ dou_trans$pnv_wetland <- as.numeric(dou_trans$pnv_wetland)
 dou_trans$pnv_marine <- as.numeric(dou_trans$pnv_marine)
 
 # Load stack of current potential natural vegetation
-ll <- list.files("PNVHabitats__ClimateRun/",recursive = TRUE,full.names = TRUE)
+ll <- list.files("ensemble/Masked/",recursive = TRUE,full.names = TRUE)
 ll <- ll[has_extension(ll, "tif")]
-ll <- ll[grep("Prediction__", ll)]
+# ll <- ll[grep("Prediction__", ll)]
 pnv <- rast(ll)
 pnv_sd <- pnv[[which(names(pnv)=="sd")]]
-names(pnv_sd) <- stringr::str_remove(tools::file_path_sans_ext(basename(ll)),"Prediction__")
+names(pnv_sd) <- stringr::str_remove(tools::file_path_sans_ext(basename(ll)),"Ensemble__")
+names(pnv_sd) <- stringr::str_remove(names(pnv_sd),"__masked")
+
 pnv <- pnv[[which(names(pnv)=="mean")]]
-names(pnv) <- stringr::str_remove(tools::file_path_sans_ext(basename(ll)),"Prediction__")
+names(pnv) <- stringr::str_remove(tools::file_path_sans_ext(basename(ll)),"Ensemble__")
+names(pnv) <- stringr::str_remove(names(pnv),"__masked")
 
 # Checks
 assertthat::assert_that(ibis.iSDM::is.Raster(pnv),
@@ -98,7 +101,7 @@ for(cl in dou_trans$code){
 }
 gc() # Cleanup
 
-# Combine all (there are no overlaps anyway)
+# Combine all (no overlaps)
 out1 <- mean(out1, na.rm = TRUE)
 out1 <- terra::mask(out1, background)
 
@@ -189,7 +192,8 @@ gm1 <- ggplot() +
   scale_fill_manual(values = cols,na.value = NA,
                     na.translate = FALSE) +
     guides(fill = guide_legend(title = "")) +
-    theme(legend.position = "bottom",legend.text = element_text(22))
+    theme(legend.position = "bottom",legend.text = element_text(22))+
+  labs(tag = "a)")
 gm1
 
 gm2 <- ggplot() +
@@ -207,9 +211,20 @@ gm2 <- ggplot() +
   # Transparent
   theme( panel.background = element_rect(fill = 'grey90'),
          plot.background = element_rect(fill = "transparent",colour = NA),
-         legend.background = element_rect(fill = "transparent"))
+         legend.background = element_rect(fill = "transparent")) +
+  labs(tag = "b)")
 gm2
 
 gm <- gm1 + gm2
 
 ggsave(plot = gm, filename = "figures/Figure3.png", width = 20, height = 10)
+
+
+# Make a summary for the paper on the most likely one
+ex <- as.data.frame(out2)
+names(ex) <- 'class'
+
+# Group and summarize
+ex |> dplyr::group_by(class) |> dplyr::summarise(n = n()) |> 
+  dplyr::ungroup() |> 
+  dplyr::mutate(n = n/sum(n))

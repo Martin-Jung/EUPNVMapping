@@ -15,7 +15,8 @@ library(exactextractr)
 normalize <- function(x) return( (x - min(x)) / (max(x) - min(x)) )
 
 # Path to the create (depends on system)
-path_output <- "PNVHabitats__ClimateRun/"
+# path_output <- "PNVHabitats__ClimateRun/"
+path_output <- "ensemble/Masked/"
 assertthat::assert_that(dir.exists(path_output))
 
 # Colours
@@ -73,7 +74,6 @@ ggplot() +
 # Load all the varying predictions
 ll <- list.files(path_output, full.names = TRUE,recursive = TRUE)
 ll <- ll[has_extension(ll, "tif")]
-ll <- ll[grep("Prediction_",ll)]
 # ll <- ll[grep("Threshold_",ll)]
 assert_that(length(ll)>0)
 
@@ -81,7 +81,8 @@ assert_that(length(ll)>0)
 ras_med <- rast(ll)
 ras_med <- ras_med[[which(names(ras_med)=="q50")]]
 # ras_med <- ras_med[[which(names(ras_med)=="threshold_q50_percentile")]]
-names(ras_med) <- stringr::str_remove(tools::file_path_sans_ext(basename(ll)),"Prediction__")
+names(ras_med) <- stringr::str_remove(tools::file_path_sans_ext(basename(ll)),"Ensemble__")
+names(ras_med) <- stringr::str_remove(names(ras_med),"__masked")
 
 # Make smaller hexagon within
 vertex_coords <- hex_grid |> 
@@ -162,8 +163,9 @@ ind_points <- ind_points |> dplyr::group_by(hex_id) |> dplyr::mutate(value = nor
 
 # Build the plot
 gm <- ggplot() +
-  cowplot::theme_map(font_size = 20) +
-  geom_sf(data = bb, alpha = 0.8, fill = "grey80", 
+  theme_gray(base_size = 20) +
+  # cowplot::theme_map(font_size = 20) +
+  geom_sf(data = bb, alpha = 0.8, fill = "white", 
           colour = "black") +
   geom_sf(data = hex_grid, fill = NA) +
   # Add points
@@ -171,7 +173,7 @@ gm <- ggplot() +
           aes(colour = variable, size = value)) +
   scale_color_manual(values = cols) +
   # scale_size_binned(range = c(0.5,1.5),n.breaks = 4,nice.breaks = TRUE,transform = "asn") +
-  scale_size_binned_area(max_size = 5) +
+  scale_size_binned_area(max_size = 4) +
   # Guides
   guides(colour = guide_legend(title = "", override.aes = list(size=7)),
          size = "none") +
@@ -181,7 +183,6 @@ gm <- ggplot() +
 #gm
 ggsave(plot = gm, paste0("figures/Figure2_full.png"), width = 14,height = 13,dpi = 400)
 
-
 #### Basic histograms ####
 # Here simply make an area estimate relative to the total land area
 ar_total <- cellSize(background, unit = "km") * background
@@ -190,21 +191,28 @@ ar_total <- cellSize(background, unit = "km") * background
 ll <- list.files(path_output, full.names = TRUE,recursive = TRUE)
 ll <- ll[has_extension(ll, "tif")]
 # ll <- ll[grep("Prediction_",ll)]
-ll <- ll[grep("Threshold_",ll)]
+#ll <- ll[grep("Threshold_",ll)]
 ras <- rast(ll)
-# ras_low <- ras[[which(names(ras)=="q05")]]
-ras_low <- ras[[which(names(ras)=="threshold_q05_percentile")]]
-names(ras_low) <- stringr::str_remove(tools::file_path_sans_ext(basename(ll)),"Prediction__")
-# ras_med <- ras[[which(names(ras)=="q50")]]
-ras_med <- ras[[which(names(ras)=="threshold_q50_percentile")]]
-names(ras_med) <- stringr::str_remove(tools::file_path_sans_ext(basename(ll)),"Prediction__")
-# ras_high <- ras[[which(names(ras)=="q95")]]
-ras_high <- ras[[which(names(ras)=="threshold_q95_percentile")]]
-names(ras_high) <- stringr::str_remove(tools::file_path_sans_ext(basename(ll)),"Prediction__")
+ras_low <- ras[[which(names(ras)=="q05")]]
+# ras_low <- ras[[which(names(ras)=="threshold_q05_percentile")]]
+# names(ras_low) <- stringr::str_remove(tools::file_path_sans_ext(basename(ll)),"Prediction__")
+ras_med <- ras[[which(names(ras)=="q50")]]
+# ras_med <- ras[[which(names(ras)=="threshold_q50_percentile")]]
+# names(ras_med) <- stringr::str_remove(tools::file_path_sans_ext(basename(ll)),"Prediction__")
+ras_high <- ras[[which(names(ras)=="q95")]]
+# ras_high <- ras[[which(names(ras)=="threshold_q95_percentile")]]
+# names(ras_high) <- stringr::str_remove(tools::file_path_sans_ext(basename(ll)),"Prediction__")
 
 ar1 <- ras_low * cellSize(ras_low,unit = "km")
 ar2 <- ras_med * cellSize(ras_med,unit = "km")
 ar3 <- ras_high * cellSize(ras_high,unit = "km")
+
+names(ar1) <- stringr::str_remove( tools::file_path_sans_ext(basename(ll)), "Ensemble__")
+names(ar1) <- stringr::str_remove( names(ar1), "__masked")
+names(ar2) <- stringr::str_remove( tools::file_path_sans_ext(basename(ll)), "Ensemble__")
+names(ar2) <- stringr::str_remove( names(ar2), "__masked")
+names(ar3) <- stringr::str_remove( tools::file_path_sans_ext(basename(ll)), "Ensemble__")
+names(ar3) <- stringr::str_remove( names(ar3), "__masked")
 
 # Summarize
 ss1 <- terra::global(ar1, "sum", na.rm = TRUE) |> as.data.frame() |> 
@@ -218,10 +226,15 @@ ss <- left_join(ss1,ss2) |> left_join(ss3)
 
 ss$variable <- stringr::str_remove(ss$variable, "Threshold__")
 
-# Convert to proportion
-ss[,c(2:4)] <- ss[,c(2:4)] / terra::global(ar_total, "sum", na.rm = TRUE)[,1]
-
 ss$variable <- factor(ss$variable, levels = names(cols))
+
+ss <- ss |> mutate(landarea = terra::global(ar_total, "sum", na.rm = TRUE)[,1])
+ss[,c(2:5)] <- ss[,c(2:5)] * 1e-6
+# Save result
+saveRDS(ss, "results/TotalAreaStats.rds")
+
+# Convert to proportion for visualization
+ss[,c(2:4)] <- ss[,c(2:4)] / terra::global(ar_total, "sum", na.rm = TRUE)[,1]
 
 # Build histogram
 g <- ggplot(ss, aes(x = variable, y = med, fill = variable)) +
@@ -229,15 +242,16 @@ g <- ggplot(ss, aes(x = variable, y = med, fill = variable)) +
   # Bar and uncertainty
   geom_bar(stat = "identity") +
   geom_errorbar(aes(ymin = low, ymax = high),linewidth = 1.25,width = 0.5) +
-  scale_y_continuous(limits = c(0, 0.9),expand = c(0,Inf),breaks = pretty_breaks(5)) +
+  scale_y_continuous(limits = c(0, 0.55),expand = c(0,Inf),breaks = pretty_breaks(5)) +
   scale_fill_manual(values = cols) +
-    guides(fill = guide_legend(title = "",nrow = 3)) +
+    # guides(fill = guide_legend(title = "",nrow = 3)) +
+    guides(fill = "none") +
     theme(legend.position = "bottom",legend.text = element_text(size = 12)) +
   theme(axis.text.x.bottom = element_blank(), axis.ticks.x.bottom = element_blank()) +
   labs(x = "", y = "Share of land area occupied (%)") +
   # Transparent
-  theme( panel.background = element_rect(fill = 'grey90'),
+  theme( panel.background = element_rect(fill = 'transparent'),
          plot.background = element_rect(fill = "transparent",colour = NA),
          legend.background = element_rect(fill = "transparent"))
 g
-ggsave(plot = g, filename = "figures/Figure2_bar.png", width = 6, height = 10,bg = "transparent")
+ggsave(plot = g, filename = "figures/Figure2_bar.png", width = 4, height = 6,bg = "transparent")
