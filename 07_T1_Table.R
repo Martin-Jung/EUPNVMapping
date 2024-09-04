@@ -8,6 +8,8 @@ source("00_Functions.R")
 
 library(purrr)
 library(gt)
+library(tidyr)
+library(dplyr)
 library(gtExtras)
 
 # Path to the create (depends on system)
@@ -61,4 +63,4 @@ gg <- vals |> dplyr::select(-ymin,-ymax) |>
   #   domain = c(0, 1)
   # )
 gg
-gt::gtsave(as_word(gg), "figures/SI_3_AccuracyTable.html")
+gt::gtsave(data = as_word(gg), "figures/SI_3_AccuracyTable.html")
