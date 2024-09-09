@@ -12,6 +12,9 @@ library(sf)
 library(ibis.iSDM)
 source("00_Functions.R")
 
+# Path ensemble
+path_ensemble <- "./ensemble"
+dir.create(path_ensemble, showWarnings = FALSE)
 
 path_output = "./PNVHabitats__ClimateRun/"
 
@@ -42,10 +45,6 @@ vals <- tidyr::separate(vals, filename, c("Valid", "variable", "model", "FoldRep
 # --------------- #
 #### Take each prediction and make an ensemble ####
 assertthat::assert_that(exists("ll"))
-
-# Path ensemble
-path_ensemble <- "./ensemble"
-dir.create(path_ensemble, showWarnings = FALSE)
 
 # Create ensembles
 for(vars in unique(vals$variable)){
@@ -117,3 +116,66 @@ for(f in ll){
   writeRaster(ras, ofname)
 }
 gc()
+
+# --------------- #
+#### Ensemble projections #####
+# Get all projections for ensemble calculations
+ll <- list.files(path_output, full.names = TRUE, recursive = TRUE)
+ll <- ll[has_extension(ll,"tif")]
+ll <- ll[grep("Projection", ll)]
+assertthat::assert_that(length(ll)>0, msg = "No results found...")
+
+# Make a container of all projections
+df <- data.frame(ifname = ll, split = tools::file_path_sans_ext(basename(ll))) |> 
+  tidyr::separate(split,sep = "__",into = c("Proj", "variable", "model", "timeperiod", "ssp", "gcm")) |> 
+  dplyr::select(-Proj)
+
+# Apply mask directly?
+apply_mask <- TRUE
+if(apply_mask) assertthat::assert_that(exists("bb"))
+
+# Create ensembles
+for(vars in unique(df$variable)){
+  for(g in unique(df$gcm)){
+    for(s in unique(df$ssp)){
+      for(p in unique(df$timeperiod)){
+        # Build output name
+        ofname <- paste0(path_ensemble, "/EnsembleProjection__",vars,"__",p,"__",s,"__",g,
+                         ifelse(apply_masked, "_masked",""),".tif")
+        if(file.exists(ofname)) next()
+        sub <- df |> dplyr::filter(variable == {{vars}},
+                                   gcm == {{g}}, ssp == {{s}}, 
+                                   timeperiod == {{p}})
+        # Get the weights too
+        w <- vals |> dplyr::filter(variable == {{vars}}) |> 
+          # Aggregate per model 
+          dplyr::filter(metric == "f1") |> dplyr::group_by(model) |> 
+          dplyr::summarise(value = mean(value))
+        assertthat::assert_that(all(sub$model == w$model))
+        
+        # Load both rasters and average
+        ras <- terra::rast(sub$ifname)
+        new <- ibis.iSDM::emptyraster(ras)
+        for(n in unique(names(ras)) ){
+          if(n %in% c("suitability_q05","suitability_q50","suitability_q95","suitability_mean")){
+            message(vars, "  -  " , n)
+            out <- terra::weighted.mean(ras[[which(names(ras)==n)]],w = w$value)
+            names(out) <- n
+            if(apply_mask){
+              # Crop
+              out <- terra::crop(out, bb)
+              out <- terra::extend(out, bb)
+              # Now mask
+              out <- terra::mask(out, bb)
+            }
+            new <- c(new, out)
+          }
+        }
+        new <- subset(new, c("suitability_q05","suitability_q50","suitability_q95","suitability_mean"))
+        
+        writeRaster(new, ofname, datatype = "FLT4S")
+        rm(new)
+      }
+    }
+  }
+}
