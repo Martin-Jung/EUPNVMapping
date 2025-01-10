@@ -14,8 +14,15 @@ source("01_ParameterSettings.R")
 
 # Set run cores for parallization
 options('ibis.nthread' = cores)
-options('ibis.runparallel' = ifelse(cores>1, TRUE, FALSE) ) # Set to FALSE for slower, but memory proof runs
+#options('ibis.runparallel' = ifelse(cores>1, TRUE, FALSE) ) # Set to FALSE for slower, but memory proof runs
+# With latest dev run:
+options(future.globals.maxSize = 2000*1024^2)
+ibis_enable_parallel()
+ibis_set_threads(cores)
+ibis_set_strategy("multisession")
+ ibis_future()
 
+if(user =='martin_local') path_output <- "/mnt/hdrive/PNVHabitats__ClimateRun" # Recode locally
 # -------------------- #
 #### Prepare files for modelling ####
 
@@ -103,8 +110,8 @@ if(file.exists(paste0(dirname(path_presentcovs),"/pnvcovariates.tif"))){
 } else {
   fullcovs <- c(prescovs, pnvcovs)
   fullcovs[is.na(fullcovs)] <- 0 # Replace all with
-  fullcovs <- terra::crop(fullcovs, background)
-  fullcovs <- terra::mask(fullcovs, background)
+  fullcovs <- terra::crop(fullcovs, background,overwrite=T)
+  fullcovs <- terra::mask(fullcovs, background,overwrite=T)
   fullcovs <- ibis.iSDM:::predictor_homogenize_na(fullcovs)
   
   # Scale all variables except the factor ones for unit consistency
@@ -147,10 +154,10 @@ assertthat::assert_that(
 #### Execute prediction sequential ####
 
 mm = c("bart","breg")[2] # Stays the same. We use BART for estimation throughout
-doFuture <- F # Future projections
+doFuture <- T # Future projections
 doValidation <- F # Validation run to assess model performance
 testing <- F # Use aggregated 10km data instead
-doPrediction <- T
+doPrediction <- F
 ## Parallel code
 # Fire up a cluster for parallel processing
 #library(doMC); library(doParallel)
@@ -284,8 +291,12 @@ for(hab in rev(habitatdbs)){ # hab <- habitatdbs[3]
   
   # if(mm == "xgboost") basemodel <- basemodel %>%  engine_xgboost(nrounds = 10000, gamma = 4)
   # if(mm == "gdb") basemodel <- basemodel %>% engine_gdb(boosting_iterations = 2500, learning_rate = 0.001)
-  if(mm == "bart") basemodel <- basemodel %>% engine_bart(iter = ifelse(doFuture,100, 1000), nburn = ifelse(doFuture,25, 1000),chains = ifelse(doFuture, 1, 4))
-  if(mm == "breg") basemodel <- basemodel %>% engine_breg(iter = ifelse(doFuture||doValidation,1000, 5000))
+  if(doFuture){
+    if(mm == "bart") basemodel <- basemodel %>% engine_bart(iter = 100, nburn = 25,chains = 1)
+  } else {
+    if(mm == "bart") basemodel <- basemodel %>% engine_bart(iter = ifelse(doFuture,100, 1000), nburn = ifelse(doFuture,25, 1000),chains = ifelse(doFuture, 1, 4))
+  }
+  if(mm == "breg") basemodel <- basemodel %>% engine_breg(iter = ifelse(doFuture||doValidation,500, 5000))
   
   # N2k data present, add simulated points
   # Now done further above
@@ -333,16 +344,16 @@ for(hab in rev(habitatdbs)){ # hab <- habitatdbs[3]
   x <- basemodel %>% 
     add_biodiversity_poipa(train, name = sname, field_occurrence = "observed", docheck = F)
   
-  # ofname <- paste0(outdir, "/", "Model__",sname, ".rds")
-  # if(file.exists(ofname) && !doFuture){
-     # mod1 <- load_model(ofname)
-  # } else {
+  ofname <- paste0(outdir, "/", "Model__",sname, "__", mm, ".rds")
+  if(file.exists(ofname) && !doFuture){
+     mod1 <- load_model(ofname)
+  } else {
     mod1 <- try({
       train(x, runname = paste0("pnv","_",sname), filter_predictors = "pear",
             only_inference = ifelse(doFuture && !doValidation, TRUE, FALSE),
             only_linear = FALSE, verbose = verbose)
     })
-  # }
+  }
   if(inherits(mod1, "try-error")) next() # Overall model fitting failed
   
   # Resave model
@@ -387,25 +398,24 @@ for(hab in rev(habitatdbs)){ # hab <- habitatdbs[3]
       for(g in unique(subs$gcm)){ # g = unique(sub$gcm)[1]
         subss <- subset(subs, gcm == g)
         message(s, " - ", g)
-        ofname <- paste0(outdir, "/", "Projection__",sname, "__", mm, "__", s, "__", g ,".nc")
-        if(file.exists(ofname)) next()
+        ofname <- paste0(outdir, "/", "Projection__",sname, "__", mm,"__", as.numeric(subss$time) ,"__", s, "__", g ,".tif")
+        if(all(file.exists(ofname))) next()
         
         # Now load the stacks per timeframe
         ras <- terra::rast(subss$ifname)
-        if(testing){
-          ras <- terra::aggregate(ras, fact = 10)
-        }
+        if(testing) ras <- terra::aggregate(ras, fact = 10, overwrite=TRUE)
+        
         if(!terra::compareGeom(ras, basemodel$predictors$get_data(),stopOnError = FALSE)){
           ras <- terra::resample(ras, basemodel$predictors$get_data(),overwrite=TRUE)
         }
         terra::time(ras) <- subss$time
         names(ras) <- subss$varname
-        ras <- terra::subst(ras, NA, 0) # Replace all NA with 0
+        ras <- terra::subst(ras, NA, 0, overwrite = TRUE) # Replace all NA with 0
         # Mask again
         # if(!terra::compareGeom(ras, background, stopOnError = FALSE)){
         #   ras <- terra::resample(ras, background)
         # }
-        ras <- terra::mask(ras, basemodel$background)
+        ras <- terra::mask(ras, basemodel$background, overwrite=TRUE)
         # # For snow (SWE) correct by setting all NA to 0
         # ras[[grep("CHELSA_swe", names(ras))]] <- terra::subst(ras[[grep("CHELSA_swe", names(ras))]],NA,0)
         # # Same for gst
@@ -477,21 +487,24 @@ for(hab in rev(habitatdbs)){ # hab <- habitatdbs[3]
           p4 <- mod1$project(newdata = as.data.frame(fut, xy = TRUE, na.rm = FALSE), layer = "mean")
           pp <- c(p1,p2,p3,p4)
           names(pp) <- paste0("suitability_", c("q05","q50","q95","mean"))
-          pt <- pp
-          pt[pt<mod1$get_thresholdvalue()] <- 0; pt[pt>0] <- 1
-          names(pt) <- paste0("threshold_", c("q05","q50","q95","mean"))
-          pp <- c(pp,pt);rm(pt)
+#          pt <- pp
+#          pt[pt<mod1$get_thresholdvalue()] <- 0; pt[pt>0] <- 1
+#          names(pt) <- paste0("threshold_", c("q05","q50","q95","mean"))
+#          pp <- c(pp,pt);rm(pt)
           if(is.Raster(pp)) terra::time(pp) <- rep(as.Date(p),terra::nlyr(pp))
           # ---- #
           
           # Save the outputs
           message("Saving the outputs...")
           ofname <- paste0(outdir, "/", "Projection__",sname, "__", mm,"__", p ,"__", s, "__", g ,".tif")
-          write_output(pp, ofname)
+          terra::writeRaster(pp, ofname, overwrite = TRUE)
+          # write_output(pp, ofname)
           try({ rm(sc, p1,p2,p3,p4, pp) },silent = TRUE)
           gc()
         } # End of period loop
+        rm(ras)
       }
+      message("SSP ", s, " done...")
     }
     # --- #
     message("Projection done for ", sname)

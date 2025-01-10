@@ -11,7 +11,7 @@ runname <- "ClimateRun"
 # It is expected that covariates are available in this grain size
 grain <- c("1000", "5000", "10000")[1]
 
-user <- c('martin_local', 'martin_hpg901', 'martin_ebro','martin_laptop')[3]
+user <- c('martin_local', 'martin_hpg901', 'martin_ebro','martin_laptop')[2]
 message(user)
 # Cross-validation strategy
 strategy_cv <- c("blocks")
@@ -20,7 +20,7 @@ strategy_cvnr <- c("blocks" = 3, "metric" = "F1")
 # Projections?
 doproj <- TRUE
 # GCMs
-gcms <- c("GFDL-ESM4","IPSL-CM6A-LR","MPI-ESM1-2-HR","MRI-ESM2-0","UKESM1-0-LL")[c(1)]
+gcms <- c("GFDL-ESM4","IPSL-CM6A-LR","MPI-ESM1-2-HR","MRI-ESM2-0","UKESM1-0-LL")[c(4)]
 
 # Save models?
 modelsave <- TRUE

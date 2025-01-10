@@ -16,7 +16,7 @@ source("00_Functions.R")
 path_ensemble <- "./ensemble"
 dir.create(path_ensemble, showWarnings = FALSE)
 
-path_output = "./PNVHabitats__ClimateRun/"
+path_output = paste0("/mnt/hdrive/","PNVHabitats__ClimateRun/")
 
 # -------------------- #
 # Get reference raster for the given grain
@@ -74,8 +74,8 @@ bb <- background
 #Load latest CORINE layer 
 #clc <- terra::rast(paste0(path_rawdata, "CORINE/u2018_clc2018_v2020_20u1_raster100m/DATA/U2018_CLC2018_V2020_20u1.tif"))
 # NOTE: Subset outsourced, load preprocessed layer
-# clc_mask <- terra::rast("/media/martin/AAB4A0AFB4A08005/CorineMask_2018_clundefined.tif")
-clc_mask <- terra::rast("corine/CorineMask_2018_clundefined.tif")
+clc_mask <- terra::rast("/media/martin/AAB4A0AFB4A08005/CorineMask_2018_clundefined.tif")
+# clc_mask <- terra::rast("corine/CorineMask_2018_clundefined.tif")
 
 # Align with background
 if(!terra::compareGeom(bb, clc_mask, stopOnError = FALSE)){
@@ -92,6 +92,7 @@ clc_mask[clc_mask>0] <- 1
 
 bb <- terra::mask(bb, clc_mask, inverse = TRUE)
 
+# --- #
 # New list using ensemble only
 ll <- list.files(path_ensemble,full.names = TRUE)
 ll <- ll[has_extension(ll, 'tif')]
@@ -139,10 +140,7 @@ for(vars in unique(df$variable)){
   for(g in unique(df$gcm)){
     for(s in unique(df$ssp)){
       for(p in unique(df$timeperiod)){
-        # Build output name
-        ofname <- paste0(path_ensemble, "/EnsembleProjection__",vars,"__",p,"__",s,"__",g,
-                         ifelse(apply_masked, "_masked",""),".tif")
-        if(file.exists(ofname)) next()
+        
         sub <- df |> dplyr::filter(variable == {{vars}},
                                    gcm == {{g}}, ssp == {{s}}, 
                                    timeperiod == {{p}})
@@ -151,13 +149,31 @@ for(vars in unique(df$variable)){
           # Aggregate per model 
           dplyr::filter(metric == "f1") |> dplyr::group_by(model) |> 
           dplyr::summarise(value = mean(value))
+        if(!all(sub$model == w$model)){ message("skipped"); next()} 
         assertthat::assert_that(all(sub$model == w$model))
         
         # Load both rasters and average
         ras <- terra::rast(sub$ifname)
-        new <- ibis.iSDM::emptyraster(ras)
+        # If raster lacks time, add here.
+        if(is.na(terra::time(ras)[1])) terra::time(ras) <- rep(as.Date(as.numeric(p)), terra::nlyr(ras))
+        
         for(n in unique(names(ras)) ){
           if(n %in% c("suitability_q05","suitability_q50","suitability_q95","suitability_mean")){
+            # Now create folder structure and save
+            # Scenario / metric /entity / time
+            # Build output folder
+            ofg <- paste0(path_ensemble, "/", 
+                          paste0(s,"__",g), # Scenario
+                          "/",
+                          paste0(n), # Metric
+                          "/",
+                          paste0(tolower(vars)) # Entity
+            )
+            dir.create(ofg, showWarnings = FALSE,recursive = TRUE)
+            # Build output name
+            ofname <- paste0(ofg, "/", lubridate::year(terra::time(out)), ".tif")
+            if(file.exists(ofname)) next()
+            
             message(vars, "  -  " , n)
             out <- terra::weighted.mean(ras[[which(names(ras)==n)]],w = w$value)
             names(out) <- n
@@ -168,13 +184,12 @@ for(vars in unique(df$variable)){
               # Now mask
               out <- terra::mask(out, bb)
             }
-            new <- c(new, out)
+            if(is.na(terra::time(out))){
+              terra::time(out) <- terra::time(ras)[1]
+            } 
+            terra::writeRaster(out, ofname, datatype = "FLT4S",overwrite = TRUE)
           }
         }
-        new <- subset(new, c("suitability_q05","suitability_q50","suitability_q95","suitability_mean"))
-        
-        writeRaster(new, ofname, datatype = "FLT4S")
-        rm(new)
       }
     }
   }
