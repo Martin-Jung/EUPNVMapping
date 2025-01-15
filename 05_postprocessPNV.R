@@ -350,3 +350,17 @@ for(s in c("ssp126", "ssp370", "ssp585")){
 }
 gc(verbose = TRUE)
 
+# Error. Rename all files 2010
+ll_ex <- list.files(path_ensemble, full.names = TRUE, recursive = TRUE)
+ll_ex <- ll_ex[has_extension(ll_ex, "tif")]
+ll_ex <- ll_ex[grep("2020", ll_ex)]
+assertthat::assert_that(length(ll_ex)>0)
+
+# Rename
+for(f in ll_ex){
+  print(basename(f))
+  file.rename(from = f,
+              to = paste0(dirname(f), "/", "2010.tif"))
+}
+
+
